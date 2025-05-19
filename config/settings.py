@@ -15,12 +15,17 @@ SECRET_KEY = 'django-insecure-$0==97wp-02u1ir2z-if8o9s8$h_h#mrvzvv#!*qw!7zp+@)5z
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'unfold',
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',
+    'crispy_forms',
+    'crispy_tailwind',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -106,6 +111,7 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20, 
 }
 
@@ -179,5 +185,104 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Create necessary directories
+os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+os.makedirs(MEDIA_ROOT, exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, 'profile_pictures'), exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, 'product_images'), exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, 'category_images'), exist_ok=True)
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'unicflo_api.User'
+
+# Telegram Integration
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+
+# Unfold settings
+UNFOLD = {
+    "SITE_TITLE": "Unicflo Admin",
+    "SITE_HEADER": "Unicflo",
+    "SITE_URL": "/",
+    "SITE_ICON": None,  # Replace with a URL path to your favicon
+    "DASHBOARD": "unicflo_api.admin_dashboard.AdminDashboard",  # Class-based dashboard
+    "COLORS": {
+        "primary": {
+            "50": "250 245 255",
+            "100": "243 232 255",
+            "200": "233 213 255",
+            "300": "216 180 254",
+            "400": "192 132 252",
+            "500": "168 85 247",
+            "600": "147 51 234",
+            "700": "126 34 206",
+            "800": "107 33 168",
+            "900": "88 28 135",
+            "950": "59 7 100",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+        "navigation": [
+            {
+                "title": "E-commerce",
+                "items": [
+                        {
+                        "title": "Dashboard",
+                        "icon": "dashboard",
+                        "link": "admin:index",
+                    },
+                    {
+                        "title": "Products",
+                        "icon": "inventory_2",
+                        "link": "admin:unicflo_api_product_changelist",
+                    },
+                    {
+                        "title": "Categories",
+                        "icon": "category",
+                        "link": "admin:unicflo_api_category_changelist",
+                    },
+                    {
+                        "title": "Orders",
+                        "icon": "shopping_cart",
+                        "link": "admin:unicflo_api_order_changelist",
+                    },
+                    {
+                        "title": "Customers",
+                        "icon": "people",
+                        "link": "admin:unicflo_api_user_changelist",
+                    },
+                    {
+                        "title": "Coupons",
+                        "icon": "local_offer",
+                        "link": "admin:unicflo_api_coupon_changelist",
+                    },
+                ],
+            },
+            {
+                "title": "Management",
+                "items": [
+                    {
+                        "title": "Reviews",
+                        "icon": "star",
+                        "link": "admin:unicflo_api_productreview_changelist",
+                    },
+                    {
+                        "title": "Addresses",
+                        "icon": "map",
+                        "link": "admin:unicflo_api_address_changelist",
+                    },
+                ],
+            },
+        ],
+    },
+}
+
+# Crispy Forms settings
+CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
+CRISPY_TEMPLATE_PACK = "tailwind"
