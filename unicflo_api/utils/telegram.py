@@ -6,6 +6,22 @@ from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
 
+# Emoji constants
+EMOJIS = {
+    'pending': '⏳',
+    'processing': '🔄',
+    'ready_for_pickup': '✨',
+    'shipped': '📦',
+    'delivered': '✅',
+    'canceled': '❌',
+    'returned': '↩️',
+    'notification': '🔔',
+    'status': '📍',
+    'price': '💰',
+    'branch': '🏪',
+    'home': '🏠',
+}
+
 class TelegramService:
     @staticmethod
     async def send_message(chat_id, message):
@@ -15,7 +31,7 @@ class TelegramService:
             
         try:
             bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
-            await bot.send_message(chat_id=chat_id, text=message)
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
             logger.info(f"Telegram message sent to {chat_id}")
         except TelegramError as e:
             logger.error(f"Failed to send Telegram message: {str(e)}")
@@ -24,55 +40,79 @@ class TelegramService:
 
     @staticmethod
     def notify_order_status(order):
-        if not hasattr(order.user, 'profile') or not order.user.profile.telegram_chat_id:
+        if not order.user.telegram_id:
             logger.info(f"User {order.user.username} has no Telegram chat ID. Skipping notification.")
             return
             
-        chat_id = order.user.profile.telegram_chat_id
+        status_emoji = EMOJIS.get(order.status, EMOJIS['notification'])
         
         # Create a detailed message
-        message = f"📦 Order #{order.id} Update 📦\n\n"
-        message += f"Status: {order.get_status_display()}\n"
-        message += f"Total: ${order.final_amount}\n\n"
+        message = (
+            f"{EMOJIS['notification']} *Обновление заказа #{order.id}*\n\n"
+            f"{EMOJIS['status']} Статус: {status_emoji} {order.get_status_display()}\n"
+            f"{EMOJIS['price']} Сумма: {order.final_amount:,} сум\n"
+        )
+
+        # Add delivery information based on shipping method
+        if order.shipping_method:
+            if order.shipping_method.delivery_type == 'branch_pickup':
+                branch = order.pickup_branch
+                if branch:
+                    message += f"\n{EMOJIS['branch']} *Филиал для самовывоза:*\n"
+                    message += f"Название: {branch.name}\n"
+                    message += f"Адрес: {branch.street}, {branch.district}\n"
+                    message += f"Часы работы: {branch.working_hours}\n"
+                    if branch.location_link:
+                        message += f"Локация: {branch.location_link}\n"
+            else:  # home_delivery
+                address = order.delivery_address
+                if address:
+                    message += f"\n{EMOJIS['home']} *Адрес доставки:*\n"
+                    message += f"Адрес: {address.street}, {address.district}\n"
+                    message += f"Телефон: {order.phone_number}\n"
         
+        # Add status-specific messages
         if order.status == 'pending':
-            message += "Your order has been received and is being processed.\n"
+            message += "\nВаш заказ получен и ожидает обработки.\n"
         elif order.status == 'processing':
-            message += "Your order is being prepared for shipping.\n"
+            message += "\nВаш заказ находится в обработке.\n"
+        elif order.status == 'ready_for_pickup':
+            message += "\nВаш заказ готов к получению в выбранном филиале!\n"
         elif order.status == 'shipped':
-            message += f"Your order has been shipped! "
+            message += "\nВаш заказ отправлен!\n"
             if order.tracking_number:
-                message += f"Tracking number: {order.tracking_number}\n"
+                message += f"Номер отслеживания: {order.tracking_number}\n"
         elif order.status == 'delivered':
-            message += "Your order has been delivered. Thank you for shopping with us!\n"
+            message += "\nВаш заказ доставлен. Спасибо за покупку!\n"
         elif order.status == 'canceled':
-            message += "Your order has been canceled.\n"
+            message += "\nВаш заказ отменен.\n"
         elif order.status == 'returned':
-            message += "Your returned items have been received.\n"
+            message += "\nВозврат товара получен.\n"
         
         # Add order items
-        message += "\nOrder Items:\n"
-        for item in order.items.all():
-            message += f"- {item.quantity}x {item.product.name} (${item.price})\n"
+        message += "\nТовары в заказе:\n"
+        for item in order.items.select_related('product').all():
+            message += f"• {item.quantity}x {item.product.name} ({item.price:,} сум)\n"
         
-        # Execute the async function
         try:
-            asyncio.run(TelegramService.send_message(chat_id, message))
+            asyncio.run(TelegramService.send_message(order.user.telegram_id, message))
         except Exception as e:
             logger.error(f"Failed to send order notification: {str(e)}")
             
     @staticmethod
-    def send_welcome_message(user_profile):
-        if not user_profile.telegram_chat_id:
+    def send_welcome_message(user):
+        if not user.telegram_id:
             logger.info(f"User has no Telegram chat ID. Skipping welcome message.")
             return
             
-        chat_id = user_profile.telegram_chat_id
-        message = f"👋 Welcome to Unicflo, {user_profile.user.username}! 👋\n\n"
-        message += "Thank you for connecting your Telegram account. You will receive updates about your orders here.\n\n"
-        message += "Happy shopping! 🛍️"
+        message = (
+            f"👋 Добро пожаловать в Unicflo, {user.get_full_name() or user.username}!\n\n"
+            "Спасибо за подключение Telegram аккаунта. "
+            "Теперь вы будете получать уведомления о статусе ваших заказов здесь.\n\n"
+            "Приятных покупок! 🛍️"
+        )
         
         try:
-            asyncio.run(TelegramService.send_message(chat_id, message))
+            asyncio.run(TelegramService.send_message(user.telegram_id, message))
         except Exception as e:
             logger.error(f"Failed to send welcome message: {str(e)}")

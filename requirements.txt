@@ -1,12 +1,37 @@
-Django==4.2.20
+# Django and DRF
+Django==5.0.1
 djangorestframework==3.14.0
-djangorestframework_simplejwt==5.4.0
-drf_yasg==1.21.9
-rest_framework_simplejwt==0.0.2
-whitenoise==6.6.0
-django-unfold==0.57.0
-django-crispy-forms==2.1
-crispy-tailwind==0.5.0
+django-filter==23.5
 django-cors-headers==4.3.1
-django-filter==24.1
-Pillow==10.3.0
+django-unfold==0.20.4
+drf-spectacular==0.27.1
+django-jazzmin==2.6.0
+whitenoise==6.6.0
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Localization
+django-modeltranslation==0.18.11
+django-rosetta==0.9.9
+
+# JWT Authentication
+djangorestframework-simplejwt==5.3.1
+
+# Image Processing
+Pillow==10.2.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# WSGI Server
+gunicorn==21.2.0
+
+# Development Tools
+black==23.12.1
+flake8==7.0.0
+isort==5.13.2
+
+# Faker for testing
+Faker==19.13.0
+factory-boy==3.3.0

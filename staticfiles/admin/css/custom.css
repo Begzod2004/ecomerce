@@ -1,0 +1,88 @@
+/* Улучшение внешнего вида админ-панели */
+.help-text {
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.help-text p {
+    margin: 5px 0;
+    line-height: 1.4;
+}
+
+.field-box {
+    margin-right: 20px !important;
+}
+
+/* Улучшение отображения полей ввода */
+.vTextField, 
+.vLargeTextField {
+    padding: 8px !important;
+    border-radius: 4px !important;
+    border: 1px solid #ddd !important;
+}
+
+.vLargeTextField {
+    min-height: 100px;
+}
+
+/* Стили для подсказок */
+.help {
+    color: #666;
+    font-style: italic;
+    margin-top: 5px;
+}
+
+/* Группировка полей */
+.form-row {
+    padding: 15px 0 !important;
+    border-bottom: 1px solid #eee;
+}
+
+/* Заголовки разделов */
+h2 {
+    color: #333;
+    padding: 10px 0;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #eee;
+}
+
+/* Стили для превью изображений */
+.preview-image {
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin: 5px;
+}
+
+/* Улучшение отображения списков */
+.results {
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.results td, 
+.results th {
+    padding: 12px 8px !important;
+}
+
+/* Стили для подсказок при наведении */
+.field-box label {
+    position: relative;
+}
+
+.field-box label:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
+}
+
+

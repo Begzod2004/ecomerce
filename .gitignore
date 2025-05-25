@@ -89,3 +89,28 @@ yarn-error.log*
 node_modules/
 package-lock.json
 yarn.lock
+
+# Database
+*.db
+*.db-journal
+
+# Configuration files
+*.cfg
+*.conf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

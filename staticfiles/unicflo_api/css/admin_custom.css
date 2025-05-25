@@ -1,0 +1,39 @@
+/* Custom styles for the admin panel */
+
+input[type="text"], input[type="email"], input[type="number"], select, textarea {
+    border: 1px solid #ccc;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+input[type="text"]:focus, input[type="email"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+    border-color: #66afe9;
+    outline: none;
+}
+
+/* Add some spacing between form elements */
+.form-row {
+    margin-bottom: 15px;
+}
+
+/* Style the labels */
+label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: block;
+}
+
+/* Style the submit button */
+input[type="submit"] {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+input[type="submit"]:hover {
+    background-color: #0056b3;
+} 
