@@ -35,13 +35,22 @@ class GenderCategorySerializer(serializers.ModelSerializer):
         model = GenderCategory
         fields = ['id', 'name', 'slug']
 
+class SubcategorySerializer(serializers.ModelSerializer):
+    gender = GenderCategorySerializer(read_only=True)
+    products_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Subcategory
+        fields = ['id', 'name', 'slug', 'description', 'gender', 'image', 'is_active', 'products_count', 'created_at']
+
 class CategorySerializer(serializers.ModelSerializer):
     gender = GenderCategorySerializer(read_only=True)
-    subcategories_count = serializers.IntegerField(read_only=True)
+    subcategories = SubcategorySerializer(many=True, read_only=True)
+    products_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug', 'description', 'gender', 'image', 'subcategories_count', 'created_at']
+        fields = ['id', 'name', 'slug', 'description', 'gender', 'image', 'subcategories', 'products_count', 'created_at']
         read_only_fields = ['slug']
 
 class BrandSerializer(serializers.ModelSerializer):
@@ -82,14 +91,6 @@ class ShippingMethodSerializer(serializers.ModelSerializer):
             'tracking_available', 'insurance_available', 'insurance_cost',
             'created_at', 'updated_at'
         ]
-
-class SubcategorySerializer(serializers.ModelSerializer):
-    gender = GenderCategorySerializer(read_only=True)
-    products_count = serializers.IntegerField(read_only=True)
-
-    class Meta:
-        model = Subcategory
-        fields = ['id', 'name', 'slug', 'description', 'gender', 'products_count']
 
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
