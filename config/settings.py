@@ -131,7 +131,7 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'UNICFLO API',
     'DESCRIPTION': 'API for UNICFLO e-commerce platform',
     'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
+    'SERVE_INCLUDE_SCHEMA': True,
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,
         'persistAuthorization': True,
@@ -145,6 +145,7 @@ SPECTACULAR_SETTINGS = {
         'operationsSorter': 'alpha',
         'showExtensions': True,
         'showCommonExtensions': True,
+        'supportedSubmitMethods': ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'],
     },
     'COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATIONS': False,
@@ -152,6 +153,7 @@ SPECTACULAR_SETTINGS = {
     'SWAGGER_UI_DIST': 'SIDECAR',
     'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
     'REDOC_DIST': 'SIDECAR',
+    'SERVE_PUBLIC': True,
     'TAGS': [
         {'name': 'User Management', 'description': 'Управление пользователями'},
         {'name': 'Category Management', 'description': 'Управление категориями товаров'},
@@ -195,8 +197,13 @@ CORS_ALLOWED_ORIGINS = [
     'https://unicflo.com',
     'http://192.168.1.102:3000',
     'http://192.168.1.104:3000',
-    
+    'http://localhost:8001',
+    'http://127.0.0.1:8001',
+    'http://82.97.248.29:8001',
 ]
+
+# Allow all origins temporarily for development
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -223,7 +230,11 @@ CORS_ALLOW_HEADERS = [
 SECURE_SSL_REDIRECT = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-CSRF_TRUSTED_ORIGINS = ['http://localhost:3000', 'https://unicflo.com']
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8001',
+    'http://127.0.0.1:8001',
+    'http://82.97.248.29:8001',
+]
 
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
