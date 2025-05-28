@@ -7,7 +7,7 @@ services:
     volumes:
       - .:/app
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - DEBUG=1
       - DJANGO_SETTINGS_MODULE=config.settings
@@ -24,7 +24,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -34,7 +34,7 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
 
