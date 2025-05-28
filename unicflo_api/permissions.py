@@ -11,4 +11,10 @@ class IsOwnerOrAdmin(permissions.BasePermission):
             return True
 
         # Write permissions are only allowed to the owner or admin users.
-        return obj.user == request.user or request.user.is_staff 
+        return obj.user == request.user or request.user.is_staff
+
+class IsCartOwner(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if hasattr(obj, 'cart'):
+            return obj.cart.user == request.user
+        return obj.user == request.user 

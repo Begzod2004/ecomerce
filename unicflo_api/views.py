@@ -18,7 +18,7 @@ import logging
 from rest_framework import exceptions
 from .models import *
 from .serializers import *
-from .permissions import IsOwnerOrAdmin
+from .permissions import IsOwnerOrAdmin, IsCartOwner
 from .pagination import DynamicPageSizePagination
 from .filters import CategoryFilter, SubcategoryFilter, ProductFilter, UserFilter
 from .utils.telegram import TelegramService
@@ -197,10 +197,27 @@ class UserRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
             del serializer.validated_data['is_telegram_admin']
         serializer.save()
 
-@extend_schema(
-    summary="Get current user",
-    description="Get details of the currently authenticated user.",
-    tags=["User Management"]
+@extend_schema_view(
+    get=extend_schema(
+        summary="Get current user",
+        description="Get details of the currently authenticated user.",
+        tags=["User Management"]
+    ),
+    put=extend_schema(
+        summary="Update user",
+        description="Update user's Telegram information.",
+        tags=["User Management"]
+    ),
+    patch=extend_schema(
+        summary="Partial update user",
+        description="Update specific fields of user's Telegram information.",
+        tags=["User Management"]
+    ),
+    delete=extend_schema(
+        summary="Delete user",
+        description="Delete a specific user account.",
+        tags=["User Management"]
+    )
 )
 class UserMeView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
@@ -1045,79 +1062,67 @@ class AddToCartView(TelegramAuthMixin, APIView):
 
     def post(self, request):
         try:
+            # Get user from request context
             user = self.get_user_from_telegram_id()
-            serializer = AddToCartRequestSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            
-            # Get or create active cart
+            if not user:
+                return Response(
+                    {'error': 'Authentication failed', 'message': 'Invalid Telegram ID', 'status': 401},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+                
+            # Get active cart for user
             cart = Cart.objects.filter(user=user, is_active=True).first()
             if not cart:
-                # Deactivate all existing carts
-                Cart.objects.filter(user=user, is_active=True).update(is_active=False)
-                # Create new active cart
+                # Create new cart if not exists
                 cart = Cart.objects.create(user=user, is_active=True)
-            
-            # Get product
+                
+            # Validate request data
+            serializer = AddToCartRequestSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Get product from request
+            product_id = serializer.validated_data.get('product_id')
             try:
-                product = Product.objects.get(id=serializer.validated_data['product_id'])
+                product = Product.objects.get(id=product_id, is_active=True)
             except Product.DoesNotExist:
-                return Response({
-                    'error': 'Product not found',
-                    'message': f"Product with ID {serializer.validated_data['product_id']} does not exist"
-                }, status=status.HTTP_404_NOT_FOUND)
-            
-            # Handle variant if provided
+                return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+                
+            # Get variant if provided
             variant = None
-            if 'variant_id' in serializer.validated_data:
+            variant_id = serializer.validated_data.get('variant_id')
+            if variant_id:
                 try:
-                    variant = ProductVariant.objects.select_related('color', 'size').get(
-                        id=serializer.validated_data['variant_id'],
-                        product=product
-                    )
-                    
-                    # Check if variant is in stock
-                    if variant.stock < serializer.validated_data.get('quantity', 1):
-                        return Response({
-                            'error': 'Insufficient stock',
-                            'message': f'Only {variant.stock} items available in stock'
-                        }, status=status.HTTP_400_BAD_REQUEST)
+                    variant = ProductVariant.objects.get(id=variant_id, product=product)
                 except ProductVariant.DoesNotExist:
-                    return Response({
-                        'error': 'Variant not found',
-                        'message': f"Variant with ID {serializer.validated_data['variant_id']} does not exist for this product"
-                    }, status=status.HTTP_404_NOT_FOUND)
+                    return Response({'error': 'Variant not found'}, status=status.HTTP_404_NOT_FOUND)
             
-            # Check if item with same variant already exists in cart
-            existing_item = CartItem.objects.filter(
+            # Check if item already exists in cart
+            cart_item, created = CartItem.objects.get_or_create(
                 cart=cart,
                 product=product,
-                variant=variant
-            ).first()
+                variant=variant,
+                defaults={'quantity': serializer.validated_data.get('quantity', 1)}
+            )
             
-            if existing_item:
-                # Update quantity if item exists
-                existing_item.quantity += serializer.validated_data.get('quantity', 1)
-                existing_item.save()
-                cart_item = existing_item
-            else:
-                # Create new cart item
-                cart_item = CartItem.objects.create(
-                    cart=cart,
-                    product=product,
-                    variant=variant,
-                    quantity=serializer.validated_data.get('quantity', 1)
-                )
-            
+            if not created:
+                new_quantity = cart_item.quantity + serializer.validated_data.get('quantity', 1)
+                if variant and new_quantity > variant.stock:
+                    return Response({
+                        'error': 'Insufficient stock',
+                        'message': f'Only {variant.stock} items available in stock'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                cart_item.quantity = new_quantity
+                cart_item.save()
+
+            serializer = CartItemSerializer(cart_item, context={'request': request})
             return Response({
-                'message': 'Product added to cart',
-                'cart_item': CartItemSerializer(cart_item, context={'request': request}).data
+                'message': 'Product added to cart successfully',
+                'cart_item': serializer.data
             }, status=status.HTTP_201_CREATED)
-            
+                
         except Exception as e:
-            return Response({
-                'error': 'Server error',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 @extend_schema(
     summary="Remove from cart",
@@ -1170,77 +1175,184 @@ class RemoveFromCartView(generics.GenericAPIView):
         request=inline_serializer(
             name='CreateOrderRequest',
             fields={
-                'shipping_address_id': serializers.IntegerField(),
-                'billing_address_id': serializers.IntegerField(required=False),
-                'cart_id': serializers.IntegerField(),
-                'order_note': serializers.CharField(required=False)
+                'cart_id': serializers.IntegerField(help_text="ID of the cart to create order from"),
+                'shipping_method_id': serializers.IntegerField(
+                    help_text="ID of the shipping method",
+                    required=False
+                ),
+                'pickup_branch_id': serializers.IntegerField(
+                    help_text="ID of the pickup branch (required)",
+                    required=True
+                ),
+                'customer_name': serializers.CharField(help_text="Customer's full name"),
+                'phone_number': serializers.CharField(help_text="Customer's phone number"),
+                'order_note': serializers.CharField(
+                    help_text="Optional note for the order",
+                    required=False,
+                    allow_blank=True
+                ),
+                'payment_method': serializers.ChoiceField(
+                    choices=Order.PAYMENT_METHOD_CHOICES,
+                    help_text="Payment method for the order"
+                )
             }
         ),
+        examples=[
+            OpenApiExample(
+                'Branch Pickup Example',
+                value={
+                    'cart_id': 1,
+                    'shipping_method_id': 1,
+                    'pickup_branch_id': 1,
+                    'customer_name': 'John Doe',
+                    'phone_number': '+998901234567',
+                    'payment_method': 'cash_on_pickup'
+                }
+            )
+        ],
+        responses={
+            201: OrderSerializer,
+            400: inline_serializer(
+                name='OrderError',
+                fields={
+                    'error': serializers.CharField(),
+                    'message': serializers.CharField()
+                }
+            )
+        },
         tags=["Order Management"]
     )
 )
 class OrderListCreateView(generics.ListCreateAPIView):
     serializer_class = OrderSerializer
-    pagination_class = DynamicPageSizePagination
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['status', 'payment_method', 'delivery_type']
+    search_fields = ['customer_name', 'phone_number', 'tracking_number']
+    ordering_fields = ['created_at', 'total_amount', 'status']
+    ordering = ['-created_at']
 
     def get_queryset(self):
-        if self.request.user.is_telegram_admin:
-            return Order.objects.all().order_by('-created_at')
-        return Order.objects.filter(user=self.request.user).order_by('-created_at')
+        user = self.request.user
+        if user.is_staff:
+            return Order.objects.all()
+        return Order.objects.filter(user=user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save()
 
 @extend_schema_view(
     get=extend_schema(
         summary="Get order details",
-        description="Retrieve details of a specific order.",
-        tags=["Order Management"]
-    ),
-    put=extend_schema(
-        summary="Update order",
-        description="Update order details. Admin only.",
+        description="Get detailed information about a specific order.",
         tags=["Order Management"]
     ),
     patch=extend_schema(
-        summary="Partial update order",
-        description="Update specific fields of an order. Admin only.",
+        summary="Update order",
+        description="Update an existing order. Only certain fields can be updated.",
+        request=inline_serializer(
+            name='UpdateOrderRequest',
+            fields={
+                'status': serializers.ChoiceField(
+                    choices=Order.STATUS_CHOICES,
+                    help_text="New status for the order",
+                    required=False
+                ),
+                'tracking_number': serializers.CharField(
+                    help_text="Tracking number for shipped orders",
+                    required=False,
+                    allow_blank=True
+                ),
+                'order_note': serializers.CharField(
+                    help_text="Additional note for the order",
+                    required=False,
+                    allow_blank=True
+                )
+            }
+        ),
+        responses={
+            200: OrderSerializer,
+            400: inline_serializer(
+                name='OrderError',
+                fields={
+                    'error': serializers.CharField(),
+                    'message': serializers.CharField()
+                }
+            )
+        },
         tags=["Order Management"]
     ),
     delete=extend_schema(
-        summary="Delete order",
-        description="Delete a specific order. Admin only.",
+        summary="Cancel order",
+        description="Cancel an order. Only pending orders can be canceled.",
+        responses={
+            204: None,
+            400: inline_serializer(
+                name='OrderError',
+                fields={
+                    'error': serializers.CharField(),
+                    'message': serializers.CharField()
+                }
+            )
+        },
         tags=["Order Management"]
     )
 )
 class OrderRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
 
     def get_queryset(self):
-        if self.request.user.is_telegram_admin:
+        user = self.request.user
+        if user.is_staff:
             return Order.objects.all()
-        return Order.objects.filter(user=self.request.user)
+        return Order.objects.filter(user=user)
 
-    def perform_update(self, serializer):
-        old_status = self.get_object().status
-        order = serializer.save()
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
         
-        # Send notification if status changed
-        if old_status != order.status and order.user.telegram_id:
-            try:
-                TelegramService.notify_order_status(order)
-            except Exception as e:
-                logger.error(f"Failed to send order status update notification: {e}")
+        # Only allow updating specific fields
+        allowed_fields = ['status', 'tracking_number', 'order_note']
+        data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        
+        serializer = self.get_serializer(instance, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Only allow canceling pending orders
+        if instance.status != 'pending':
+            return Response(
+                {'error': 'Cannot cancel order', 'message': 'Only pending orders can be canceled'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        instance.status = 'canceled'
+        instance.save()
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 @extend_schema(
     summary="Cancel order",
-    description="Cancel an order if it's in pending or processing status.",
-    request=None,
+    description="Cancel an existing order. Only pending orders can be canceled.",
+    request=inline_serializer(
+        name='CancelOrderRequest',
+        fields={
+            'reason': serializers.CharField(
+                help_text="Reason for cancellation",
+                required=False,
+                allow_blank=True
+            )
+        }
+    ),
     responses={
-        200: OrderResponseSerializer,
-        400: OpenApiResponse(description="Order cannot be cancelled"),
+        200: OrderSerializer,
+        400: OpenApiResponse(description="Order cannot be canceled"),
         404: OpenApiResponse(description="Order not found")
     },
     tags=["Order Management"]
@@ -1248,37 +1360,42 @@ class OrderRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 class CancelOrderView(generics.GenericAPIView):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TelegramAuthentication]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Order.objects.all()
+        return Order.objects.filter(user=user)
 
     def post(self, request, pk):
         try:
-            order = Order.objects.get(pk=pk)
-            
-            # Check permissions
-            if not (request.user.is_staff or request.user.is_telegram_admin or order.user == request.user):
-                return Response({"error": "Permission denied"}, status=403)
-                
-            if order.status not in ['pending', 'processing']:
-                return Response({
-                    'error': 'Order cannot be cancelled in its current status'
-                }, status=400)
-            
-            order.status = 'canceled'
-            order.save()
-            
-            # Send notification
-            if order.user.telegram_id:
-                try:
-                    TelegramService.notify_order_status(order)
-                except Exception as e:
-                    logger.error(f"Failed to send order cancellation notification: {e}")
-            
-            response_serializer = OrderResponseSerializer({
-                'message': 'Order cancelled successfully',
-                'order': order
-            })
-            return Response(response_serializer.data)
+            order = self.get_queryset().get(pk=pk)
         except Order.DoesNotExist:
-            return Response({'error': 'Order not found'}, status=404)
+            return Response(
+                {"error": "Order not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if order.status != 'pending':
+            return Response(
+                {"error": "Only pending orders can be canceled"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update order status
+        order.status = 'canceled'
+        order.order_note = request.data.get('reason', '')
+        order.save()
+
+        # Send notification
+        try:
+            TelegramService.notify_order_status(order)
+        except Exception as e:
+            logger.error(f"Failed to send order cancellation notification: {str(e)}")
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data)
 
 @extend_schema_view(
     get=extend_schema(
@@ -1982,229 +2099,81 @@ class RemovePromoCodeView(generics.CreateAPIView):
             'new_total': cart.total_price
         })
 
+class CartAddItemView(generics.CreateAPIView):
+    serializer_class = CartItemSerializer
+    permission_classes = [IsAuthenticated, IsCartOwner]
+
+    def get_queryset(self):
+        return CartItem.objects.filter(cart__user=self.request.user)
+
+class CartRemoveItemView(generics.DestroyAPIView):
+    serializer_class = CartItemSerializer
+    permission_classes = [IsAuthenticated, IsCartOwner]
+
+    def get_queryset(self):
+        return CartItem.objects.filter(cart__user=self.request.user)
+
+class CartUpdateQuantityView(generics.UpdateAPIView):
+    serializer_class = CartItemSerializer
+    permission_classes = [IsAuthenticated, IsCartOwner]
+
+    def get_queryset(self):
+        return CartItem.objects.filter(cart__user=self.request.user)
+
+class CartClearView(generics.DestroyAPIView):
+    serializer_class = CartSerializer
+    permission_classes = [IsAuthenticated, IsCartOwner]
+
+    def get_queryset(self):
+        return Cart.objects.filter(user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        cart = self.get_object()
+        cart.items.all().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class CartViewSet(viewsets.ModelViewSet):
     serializer_class = CartSerializer
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [TelegramAuthentication]
+    permission_classes = [IsAuthenticated, IsCartOwner]
+    pagination_class = DynamicPageSizePagination
 
     def get_queryset(self):
         user = self.request.user
-        return Cart.objects.filter(user=user, is_active=True)
+        if user.is_staff:
+            return Cart.objects.all()
+        return Cart.objects.filter(user=user)
 
-    def perform_create(self, serializer):
-        with transaction.atomic():
-            # Deactivate all existing carts for the user
-            Cart.objects.filter(user=self.request.user, is_active=True).update(is_active=False)
-            # Create new active cart
-            serializer.save(user=self.request.user, is_active=True)
+    @extend_schema(
+        summary="Get cart details",
+        description="Get detailed information about a specific cart.",
+        tags=["Cart Management"]
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
-    @action(detail=False, methods=['post'])
-    def clear(self, request):
-        try:
-            with transaction.atomic():
-                cart = self.get_queryset().first()
-                if cart:
-                    cart.items.all().delete()
-                    return Response({'message': 'Cart cleared successfully'})
-                return Response({'message': 'No active cart found'}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    @extend_schema(
+        summary="Update cart",
+        description="Update an existing cart.",
+        tags=["Cart Management"]
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
 
-    @action(detail=True, methods=['post'])
-    def add_item(self, request, pk=None):
-        try:
-            with transaction.atomic():
-                cart = self.get_object()
-                product_id = request.data.get('product_id')
-                quantity = int(request.data.get('quantity', 1))
-                variant_id = request.data.get('variant_id')
+    @extend_schema(
+        summary="Partially update cart",
+        description="Partially update an existing cart.",
+        tags=["Cart Management"]
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
 
-                if not product_id:
-                    return Response(
-                        {'error': 'Product ID is required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                try:
-                    product = Product.objects.select_for_update().get(id=product_id)
-                except Product.DoesNotExist:
-                    return Response(
-                        {'error': 'Product not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-
-                # Handle variant if provided
-                variant = None
-                if variant_id:
-                    try:
-                        variant = ProductVariant.objects.select_for_update().get(
-                            id=variant_id,
-                            product=product
-                        )
-                        if variant.stock < quantity:
-                            return Response({
-                                'error': 'Insufficient stock',
-                                'message': f'Only {variant.stock} items available in stock'
-                            }, status=status.HTTP_400_BAD_REQUEST)
-                    except ProductVariant.DoesNotExist:
-                        return Response({
-                            'error': 'Variant not found',
-                            'message': f"Variant with ID {variant_id} does not exist for this product"
-                        }, status=status.HTTP_404_NOT_FOUND)
-
-                # Check if item already exists in cart
-                cart_item, created = CartItem.objects.get_or_create(
-                    cart=cart,
-                    product=product,
-                    variant=variant,
-                    defaults={'quantity': quantity}
-                )
-
-                if not created:
-                    new_quantity = cart_item.quantity + quantity
-                    if variant and new_quantity > variant.stock:
-                        return Response({
-                            'error': 'Insufficient stock',
-                            'message': f'Only {variant.stock} items available in stock'
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    cart_item.quantity = new_quantity
-                    cart_item.save()
-
-                serializer = CartItemSerializer(cart_item)
-                return Response(serializer.data)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['post'])
-    def remove_item(self, request, pk=None):
-        try:
-            with transaction.atomic():
-                cart = self.get_object()
-                item_id = request.data.get('item_id')
-
-                if not item_id:
-                    return Response(
-                        {'error': 'Item ID is required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                try:
-                    cart_item = CartItem.objects.select_for_update().get(id=item_id, cart=cart)
-                    cart_item.delete()
-                    return Response(status=status.HTTP_204_NO_CONTENT)
-                except CartItem.DoesNotExist:
-                    return Response(
-                        {'error': 'Cart item not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['post'])
-    def update_quantity(self, request, pk=None):
-        try:
-            with transaction.atomic():
-                cart = self.get_object()
-                item_id = request.data.get('item_id')
-                quantity = int(request.data.get('quantity', 1))
-
-                if not item_id:
-                    return Response(
-                        {'error': 'Item ID is required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                if quantity < 1:
-                    return Response(
-                        {'error': 'Quantity must be at least 1'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                try:
-                    cart_item = CartItem.objects.select_for_update().get(id=item_id, cart=cart)
-                    if cart_item.variant and quantity > cart_item.variant.stock:
-                        return Response({
-                            'error': 'Insufficient stock',
-                            'message': f'Only {cart_item.variant.stock} items available in stock'
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    
-                    cart_item.quantity = quantity
-                    cart_item.save()
-                    serializer = CartItemSerializer(cart_item)
-                    return Response(serializer.data)
-                except CartItem.DoesNotExist:
-                    return Response(
-                        {'error': 'Cart item not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['post'])
-    def apply_promo(self, request, pk=None):
-        try:
-            with transaction.atomic():
-                cart = self.get_object()
-                promo_code = request.data.get('promo_code')
-
-                if not promo_code:
-                    return Response(
-                        {'error': 'Promo code is required'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                try:
-                    promo = PromoCode.objects.select_for_update().get(code=promo_code)
-                    is_valid, message = promo.is_valid(
-                        request.user,
-                        cart.total_price,
-                        cart.items.count()
-                    )
-
-                    if is_valid:
-                        discount = promo.calculate_discount(cart.total_price, cart.items.all())
-                        cart.promo_code = promo
-                        cart.promo_code_discount = discount
-                        cart.save()
-                        return Response({
-                            'message': 'Promo code applied successfully',
-                            'discount': discount,
-                            'new_total': cart.total_price - discount
-                        })
-                    else:
-                        return Response(
-                            {'error': message},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                except PromoCode.DoesNotExist:
-                    return Response(
-                        {'error': 'Invalid promo code'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['post'])
-    def remove_promo(self, request, pk=None):
-        try:
-            with transaction.atomic():
-                cart = self.get_object()
-                if not cart.promo_code:
-                    return Response(
-                        {'error': 'No promo code applied to this cart'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                
-                cart.promo_code = None
-                cart.promo_code_discount = 0
-                cart.save()
-                
-                return Response({
-                    'message': 'Promo code removed successfully',
-                    'total': cart.total_price
-                })
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    @extend_schema(
+        summary="Delete cart",
+        description="Delete a specific cart.",
+        tags=["Cart Management"]
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 class ProductRecommendationViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ProductRecommendationSerializer
@@ -2243,3 +2212,100 @@ class ProductRecommendationViewSet(viewsets.ReadOnlyModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+@extend_schema(
+    summary="Get active branches",
+    description="Get a list of all active branches (stores and pickup points)",
+    tags=["Branch Management"],
+    responses={
+        200: serializers.ListSerializer(child=AddressSerializer()),
+        401: OpenApiResponse(
+            description="Authentication failed",
+            response=inline_serializer(
+                name='AuthError',
+                fields={
+                    'error': serializers.CharField(),
+                    'message': serializers.CharField(),
+                    'status': serializers.IntegerField(),
+                }
+            )
+        )
+    }
+)
+class ActiveBranchesView(TelegramAuthMixin, APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        branches = Address.objects.filter(
+            branch_type__in=['store', 'pickup'],
+            is_active=True
+        ).order_by('name')
+        
+        serializer = AddressSerializer(branches, many=True)
+        return Response(serializer.data)
+
+class DirectPurchaseView(TelegramAuthMixin, APIView):
+    permission_classes = [AllowAny]
+    
+    @extend_schema(
+        request=DirectPurchaseSerializer,
+        responses={201: OrderResponseSerializer},
+        description="Mahsulotni bevosita detail sahifasidan sotib olish"
+    )
+    def post(self, request):
+        serializer = DirectPurchaseSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                with transaction.atomic():
+                    # Get user from telegram ID
+                    user = self.get_user_from_telegram_id()
+                    
+                    # Get validated data
+                    data = serializer.validated_data
+                    product = Product.objects.get(id=data['product_id'])
+                    pickup_branch = Address.objects.get(id=data['pickup_branch_id'])
+                    
+                    # Create order
+                    order = Order.objects.create(
+                        user=user,
+                        pickup_branch=pickup_branch,
+                        customer_name=data['customer_name'],
+                        phone_number=data['phone_number'],
+                        payment_method=data['payment_method'],
+                        order_note=data.get('order_note', ''),
+                        is_split_payment=data.get('is_split_payment', False),
+                        status='pending'
+                    )
+                    
+                    # Add order item
+                    variant = None
+                    if data.get('variant_id'):
+                        variant = ProductVariant.objects.get(id=data['variant_id'])
+                    
+                    OrderItem.objects.create(
+                        order=order,
+                        product=product,
+                        variant=variant,
+                        quantity=data['quantity'],
+                        price=product.discount_price or product.price
+                    )
+                    
+                    # Calculate totals
+                    order.calculate_totals()
+                    
+                    # Update product stock
+                    if variant:
+                        variant.stock -= data['quantity']
+                        variant.save()
+                    
+                    return Response({
+                        'message': 'Buyurtma muvaffaqiyatli yaratildi',
+                        'order': OrderSerializer(order, context={'request': request}).data
+                    }, status=201)
+                    
+            except Exception as e:
+                return Response({
+                    'message': str(e)
+                }, status=400)
+                
+        return Response(serializer.errors, status=400)

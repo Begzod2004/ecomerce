@@ -193,6 +193,9 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'https://unicflo.com',
+    'http://192.168.1.102:3000',
+    'http://192.168.1.104:3000',
+    
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
@@ -500,12 +503,16 @@ CACHES = {
     }
 }
 
+# Redis configuration
+REDIS_HOST = 'redis'
+REDIS_PORT = 6379
+
 # Try to use Redis cache if django-redis is installed
 try:
     import django_redis
     CACHES['redis'] = {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://redis:6379/1',
+        'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/1',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'SOCKET_CONNECT_TIMEOUT': 5,
@@ -522,27 +529,9 @@ try:
 except ImportError:
     pass  # Django-Redis not installed, using default cache only
 
-# Celery settings - use Redis if available or memory otherwise
-try:
-    import redis
-    redis_instance = redis.Redis(host='localhost', port=6379, db=0)
-    redis_instance.ping()  # Test connection
-    
-    # Redis is available, use it for Celery
-    CELERY_BROKER_URL = 'redis://localhost:6379/0'
-    CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-    if os.environ.get('DOCKER_CONTAINER'):
-        # When running in Docker, use the container name
-        CELERY_BROKER_URL = 'redis://redis:6379/0'
-        CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
-except (ImportError, redis.exceptions.ConnectionError):
-    # Redis not available, use memory instead (development only)
-    CELERY_BROKER_URL = 'memory://'
-    CELERY_RESULT_BACKEND = 'memory://'
-    CELERY_TASK_ALWAYS_EAGER = True  # Execute tasks immediately
-    CELERY_BROKER_BACKEND = 'memory'
-
-# Common Celery settings
+# Celery settings
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'

@@ -167,7 +167,6 @@ class Season(models.Model):
 class ShippingMethod(models.Model):
     DELIVERY_TYPE_CHOICES = (
         ('branch_pickup', 'Branch Pickup'),
-        ('home_delivery', 'Home Delivery'),
     )
     
     name = models.CharField(max_length=100)
@@ -649,6 +648,10 @@ class Order(models.Model):
         ('split', 'Split Payment'),
     )
     
+    DELIVERY_TYPE_CHOICES = (
+        ('branch_pickup', 'Branch Pickup'),
+    )
+    
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     cart = models.ForeignKey(Cart, on_delete=models.SET_NULL, null=True)
     products = models.ManyToManyField(Product, through='OrderItem')
@@ -658,12 +661,10 @@ class Order(models.Model):
     final_amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     shipping_method = models.ForeignKey(ShippingMethod, on_delete=models.SET_NULL, null=True)
+    delivery_type = models.CharField(max_length=20, choices=DELIVERY_TYPE_CHOICES, default='branch_pickup')
     
     # For branch pickup
     pickup_branch = models.ForeignKey('Address', on_delete=models.SET_NULL, null=True, related_name='pickup_orders', help_text='Branch for pickup')
-    
-    # For home delivery
-    delivery_address = models.ForeignKey('Address', on_delete=models.SET_NULL, null=True, related_name='delivery_orders', help_text='Address for home delivery')
     
     tracking_number = models.CharField(max_length=100, blank=True)
     order_note = models.TextField(blank=True)
@@ -689,31 +690,108 @@ class Order(models.Model):
         return f"Order #{self.id} by {self.user.username}"
 
     def save(self, *args, **kwargs):
-        if not self.pk:  # Only on creation
-            super().save(*args, **kwargs)  # Save first to create ID
-        else:
-            # Calculate totals
+        # Calculate totals even on first save
+        if self.pk:
             self.total_amount = sum(item.total_price for item in self.items.all())
+        else:
+            self.total_amount = 0
             
-            # Calculate shipping amount based on delivery type
-            if self.shipping_method:
-                self.shipping_amount = self.shipping_method.calculate_shipping_cost(self.total_amount)
-            
-            self.final_amount = self.total_amount + self.shipping_amount - self.discount_amount
-            
-            # Handle split payment calculations
-            if self.is_split_payment and not self.first_payment_amount:
-                self.first_payment_amount = self.final_amount * Decimal('0.5')
-                self.second_payment_amount = self.final_amount - self.first_payment_amount
-                self.second_payment_due_date = timezone.now() + timedelta(days=30)
-            
-            super().save(*args, **kwargs)
-
-    def calculate_totals(self):
-        self.total_amount = sum(item.total_price for item in self.items.all())
         if self.shipping_method:
             self.shipping_amount = self.shipping_method.calculate_shipping_cost(self.total_amount)
+        else:
+            self.shipping_amount = 0
+            
         self.final_amount = self.total_amount + self.shipping_amount - self.discount_amount
+        
+        # Set is_split_payment based on payment_method
+        if self.payment_method == 'split':
+            self.is_split_payment = True
+        
+        # Handle split payment amounts
+        if self.is_split_payment and self.final_amount > 0:
+            # If first payment amount is not set, calculate it as 50% of final amount
+            if not self.first_payment_amount:
+                self.first_payment_amount = self.final_amount / 2
+            # Second payment amount is the remaining amount
+            self.second_payment_amount = self.final_amount - self.first_payment_amount
+            
+            # Set payment dates and statuses
+            now = timezone.now()
+            
+            # First payment is due immediately
+            if not self.first_payment_date:
+                self.first_payment_date = now
+                self.payment_status = 'pending'  # First payment is pending
+            
+            # Second payment is due in 30 days
+            if not self.second_payment_due_date:
+                self.second_payment_due_date = now + timedelta(days=30)
+                self.second_payment_status = 'pending'  # Second payment is pending
+            
+            # Update payment statuses based on dates
+            if self.first_payment_date and self.payment_status == 'pending':
+                # If first payment is overdue (more than 1 day)
+                if now - self.first_payment_date > timedelta(days=1):
+                    self.payment_status = 'canceled'
+                    self.status = 'canceled'  # Cancel the entire order if first payment is overdue
+            elif self.payment_status == 'delivered':
+                # If first payment is delivered, check second payment
+                if self.second_payment_due_date and self.second_payment_status == 'pending':
+                    # If second payment is overdue
+                    if now > self.second_payment_due_date:
+                        self.second_payment_status = 'canceled'
+        else:
+            # Reset split payment fields if not using split payment
+            self.is_split_payment = False
+            self.first_payment_amount = None
+            self.first_payment_date = None
+            self.second_payment_amount = None
+            self.second_payment_due_date = None
+            self.second_payment_status = 'pending'
+        
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        
+        # Validate delivery type and related fields
+        if self.delivery_type == 'branch_pickup' and not self.pickup_branch:
+            raise ValidationError({'pickup_branch': 'Pickup branch is required for branch pickup delivery'})
+        
+        # Validate shipping method matches delivery type
+        if self.shipping_method and self.shipping_method.delivery_type != self.delivery_type:
+            raise ValidationError({'shipping_method': f'Shipping method must be of type {self.delivery_type}'})
+
+    def calculate_totals(self):
+        """Calculate order totals including split payment amounts"""
+        # Calculate base totals
+        self.total_amount = sum(item.total_price for item in self.items.all())
+        self.final_amount = self.total_amount - self.discount_amount + self.shipping_amount
+        
+        # Handle split payment calculations
+        if self.is_split_payment:
+            # First payment is 50% of the final amount
+            self.first_payment_amount = self.final_amount / 2
+            # Second payment is the remaining 50%
+            self.second_payment_amount = self.final_amount - self.first_payment_amount
+            
+            # Set first payment date to now
+            self.first_payment_date = timezone.now()
+            
+            # Set second payment due date to 30 days from now
+            self.second_payment_due_date = timezone.now() + timedelta(days=30)
+            
+            # Set initial payment statuses
+            self.payment_status = 'pending'  # First payment status
+            self.second_payment_status = 'pending'  # Second payment status
+        else:
+            # Reset split payment fields if not using split payment
+            self.first_payment_amount = None
+            self.first_payment_date = None
+            self.second_payment_amount = None
+            self.second_payment_due_date = None
+            self.second_payment_status = 'pending'
+        
         self.save()
 
     class Meta:
@@ -749,8 +827,8 @@ class OrderItem(models.Model):
         return self.quantity * self.price
 
     def save(self, *args, **kwargs):
-        if self.price is None:
-            self.price = self.product.price
+        if self.price is None and self.product_id:
+            self.price = self.product.discount_price or self.product.price
         super().save(*args, **kwargs)
 
     class Meta:

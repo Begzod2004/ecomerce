@@ -291,20 +291,20 @@ class CartItemAdmin(ModelAdmin):
 
 class OrderAdmin(ModelAdmin):
     list_display = ('id', 'user', 'phone_number', 'total_amount', 'final_amount', 'status_badge', 'created_at')
-    list_filter = ('status', 'created_at')
-    search_fields = ('user__username', 'tracking_number', 'phone_number')
+    list_filter = ('status', 'payment_method', 'created_at')
+    search_fields = ('user__username', 'tracking_number', 'phone_number', 'customer_name')
     inlines = [OrderItemInline]
     readonly_fields = ('created_at', 'updated_at', 'order_summary')
     actions = ['delete_selected']
     fieldsets = (
         ('Основная информация', {
-            'fields': ('user', 'status', 'phone_number', 'order_summary')
+            'fields': ('user', 'customer_name', 'phone_number', 'status', 'order_summary')
         }),
         ('Оплата', {
-            'fields': ('total_amount', 'discount_amount', 'shipping_amount', 'final_amount')
+            'fields': ('payment_method', 'payment_status', 'total_amount', 'discount_amount', 'shipping_amount', 'final_amount', 'is_split_payment')
         }),
         ('Доставка', {
-            'fields': ('shipping_address', 'billing_address', 'tracking_number')
+            'fields': ('shipping_method', 'pickup_branch', 'delivery_address', 'tracking_number')
         }),
         ('Дополнительно', {
             'fields': ('order_note', 'created_at', 'updated_at')
@@ -344,14 +344,20 @@ class OrderAdmin(ModelAdmin):
         html += '<table style="width: 100%; border-collapse: collapse;">'
         html += '<tr style="background-color: #f8f9fa;">'
         html += '<th style="padding: 8px; border: 1px solid #dee2e6;">Товар</th>'
+        html += '<th style="padding: 8px; border: 1px solid #dee2e6;">Вариант</th>'
         html += '<th style="padding: 8px; border: 1px solid #dee2e6;">Количество</th>'
         html += '<th style="padding: 8px; border: 1px solid #dee2e6;">Цена</th>'
         html += '<th style="padding: 8px; border: 1px solid #dee2e6;">Итого</th>'
         html += '</tr>'
         
         for item in obj.items.all():
+            variant_info = ""
+            if item.variant:
+                variant_info = f"{item.variant.color.name}, {item.variant.size.name}"
+            
             html += '<tr>'
             html += f'<td style="padding: 8px; border: 1px solid #dee2e6;">{item.product.name}</td>'
+            html += f'<td style="padding: 8px; border: 1px solid #dee2e6;">{variant_info}</td>'
             html += f'<td style="padding: 8px; border: 1px solid #dee2e6;">{item.quantity}</td>'
             html += f'<td style="padding: 8px; border: 1px solid #dee2e6;">{item.price}</td>'
             html += f'<td style="padding: 8px; border: 1px solid #dee2e6;">{item.total_price}</td>'
@@ -364,10 +370,45 @@ class OrderAdmin(ModelAdmin):
             html += f'<p><strong>Скидка:</strong> {obj.discount_amount}</p>'
         html += f'<p><strong>Доставка:</strong> {obj.shipping_amount}</p>'
         html += f'<p><strong>Итого к оплате:</strong> {obj.final_amount}</p>'
+        
+        # Информация о способе доставки
+        if obj.shipping_method:
+            delivery_type = obj.shipping_method.get_delivery_type_display()
+            html += f'<p><strong>Способ доставки:</strong> {obj.shipping_method.name} ({delivery_type})</p>'
+        
+            # Информация о филиале для самовывоза
+            if obj.shipping_method.delivery_type == 'branch_pickup' and obj.pickup_branch:
+                html += f'<p><strong>Филиал для самовывоза:</strong> {obj.pickup_branch.name}</p>'
+                html += f'<p><strong>Адрес филиала:</strong> {obj.pickup_branch.street}, {obj.pickup_branch.district}, {obj.pickup_branch.city}</p>'
+            
+            # Информация о адресе доставки
+            elif obj.shipping_method.delivery_type == 'home_delivery' and obj.delivery_address:
+                html += f'<p><strong>Адрес доставки:</strong> {obj.delivery_address}</p>'
+        
+        # Информация о способе оплаты
+        payment_methods = {
+            'card': 'Банковская карта',
+            'cash_on_delivery': 'Наличные при доставке',
+            'cash_on_pickup': 'Наличные при получении',
+            'split': 'Рассрочка',
+        }
+        payment_method = payment_methods.get(obj.payment_method, obj.payment_method)
+        html += f'<p><strong>Способ оплаты:</strong> {payment_method}</p>'
+        
+        if obj.is_split_payment:
+            html += '<p><strong>Оплата в рассрочку</strong></p>'
+            if obj.first_payment_amount:
+                html += f'<p>Первый платеж: {obj.first_payment_amount}</p>'
+            if obj.second_payment_amount:
+                html += f'<p>Второй платеж: {obj.second_payment_amount}</p>'
+        
         html += '</div>'
         html += '</div>'
         return mark_safe(html)
     order_summary.short_description = "Информация о заказе"
+
+    class Media:
+        js = ('unicflo_api/js/order_dynamic_fields.js',)
 
 
 @admin.register(Address)

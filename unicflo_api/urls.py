@@ -35,7 +35,13 @@ from .views import (
     PromoCodeListCreateView, PromoCodeRetrieveUpdateDestroyView,
     ApplyPromoCodeView, RemovePromoCodeView,
     CartViewSet,
-    ProductRecommendationViewSet
+    ProductRecommendationViewSet,
+    CartAddItemView,
+    CartRemoveItemView,
+    CartUpdateQuantityView,
+    CartClearView,
+    DirectPurchaseView,
+    ActiveBranchesView,
 )
 
 app_name = 'unicflo_api'
@@ -104,26 +110,33 @@ urlpatterns = [
     path('cart/', MyCartView.as_view(), name='my-cart'),
     path('carts/', CartListCreateView.as_view(), name='cart-list'),
     path('carts/<int:pk>/', CartViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='cart-detail'),
-    path('carts/<int:pk>/clear/', CartViewSet.as_view({'post': 'clear'}), name='cart-clear'),
-    path('carts/<int:pk>/add-item/', CartViewSet.as_view({'post': 'add_item'}), name='cart-add-item'),
-    path('carts/<int:pk>/remove-item/', CartViewSet.as_view({'post': 'remove_item'}), name='cart-remove-item'),
-    path('carts/<int:pk>/update-quantity/', CartViewSet.as_view({'post': 'update_quantity'}), name='cart-update-quantity'),
-    path('carts/<int:pk>/apply-promo/', CartViewSet.as_view({'post': 'apply_promo'}), name='cart-apply-promo'),
-    path('carts/<int:pk>/remove-promo/', CartViewSet.as_view({'post': 'remove_promo'}), name='cart-remove-promo'),
+    path('carts/<int:pk>/add-item/', CartAddItemView.as_view(), name='cart-add-item'),
+    path('carts/<int:pk>/remove-item/', CartRemoveItemView.as_view(), name='cart-remove-item'),
+    path('carts/<int:pk>/update-quantity/', CartUpdateQuantityView.as_view(), name='cart-update-quantity'),
+    path('carts/<int:pk>/apply-promo/', ApplyPromoCodeView.as_view(), name='cart-apply-promo'),
+    path('carts/<int:pk>/remove-promo/', RemovePromoCodeView.as_view(), name='cart-remove-promo'),
+    path('carts/<int:pk>/clear/', CartClearView.as_view(), name='cart-clear'),
     
     # Order URLs
     path('orders/', OrderListCreateView.as_view(), name='order-list'),
-    path('orders/<int:pk>/', OrderRetrieveUpdateDestroyView.as_view(), name='order-detail'),
-    path('orders/<int:pk>/cancel/', CancelOrderView.as_view(), name='cancel-order'),
+    path('orders/<int:id>/', OrderRetrieveUpdateDestroyView.as_view(), name='order-detail'),
+    path('orders/<int:id>/cancel/', CancelOrderView.as_view(), name='cancel-order'),
     
     # Address URLs
     path('addresses/', AddressListCreateView.as_view(), name='address-list'),
     path('addresses/<int:pk>/', AddressRetrieveUpdateDestroyView.as_view(), name='address-detail'),
+    
+    # Branch URLs
+    path('branches/', ActiveBranchesView.as_view(), name='active-branches'),
     
     # Promo Code URLs
     path('promo-codes/', PromoCodeListCreateView.as_view(), name='promo-code-list'),
     path('promo-codes/<int:pk>/', PromoCodeRetrieveUpdateDestroyView.as_view(), name='promo-code-detail'),
     path('promo-codes/apply/', ApplyPromoCodeView.as_view(), name='apply-promo-code'),
     path('promo-codes/remove/', RemovePromoCodeView.as_view(), name='remove-promo-code'),
+
+    # Direct Purchase URL
+    path('direct-purchase/', DirectPurchaseView.as_view(), name='direct-purchase'),
+    
     path('', include(router.urls)),
 ]

@@ -61,8 +61,8 @@ class Command(BaseCommand):
                 )
                 recommendations_created += 1
             
-            # 3. Products from same gender category
-            gender_products = Product.objects.filter(
+                # 3. Products from same gender category
+                gender_products = Product.objects.filter(
                 gender=product.gender
             ).exclude(
                 id=product.id

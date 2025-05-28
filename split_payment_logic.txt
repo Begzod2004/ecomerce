@@ -1,0 +1,152 @@
+Split Payment (Bo'lib To'lash) Logikasi Hujjati
+============================================
+
+1. Umumiy Ma'lumot
+------------------
+Bo'lib to'lash mijozlarga buyurtmani ikki qismda to'lash imkonini beradi:
+- Birinchi to'lov: Darhol to'lanishi kerak
+- Ikkinchi to'lov: 30 kun ichida to'lanishi kerak
+
+2. Bo'lib To'lash bilan Buyurtma Yaratish
+----------------------------------------
+Bo'lib to'lash bilan buyurtma yaratishda:
+- is_split_payment = true o'rnatiladi
+- Umumiy summa ikki teng qismga bo'linadi:
+  * first_payment_amount = total_amount / 2 (birinchi to'lov miqdori)
+  * second_payment_amount = total_amount / 2 (ikkinchi to'lov miqdori)
+
+3. To'lov Oqimi
+--------------
+Birinchi To'lov:
+- Buyurtma yaratilganda darhol to'lanishi kerak
+- To'lov holati payment_status maydonida kuzatiladi
+- Mumkin bo'lgan holatlar: 'pending' (kutilmoqda), 'delivered' (to'langan)
+
+Ikkinchi To'lov:
+- Buyurtma yaratilganidan 30 kun ichida to'lanishi kerak
+- To'lov holati second_payment_status maydonida kuzatiladi
+- Mumkin bo'lgan holatlar: 'pending' (kutilmoqda), 'delivered' (to'langan)
+
+4. API Javob Strukturasi
+-----------------------
+Buyurtma ma'lumotlarini olishda, bo'lib to'lash ma'lumotlari javobga kiritiladi:
+
+{
+    "split_payment_info": {
+        "first_payment": {
+            "amount": 100000,          // Birinchi to'lov miqdori
+            "date": "2024-03-20",      // To'lov sanasi
+            "status": "delivered",     // To'lov holati
+            "due_date": "2024-03-20",  // To'lov muddati (darhol)
+            "is_overdue": false,       // To'lov kechiktirilganmi
+            "is_paid": true           // To'lov to'langanmi
+        },
+        "second_payment": {
+            "amount": 100000,          // Ikkinchi to'lov miqdori
+            "due_date": "2024-04-19",  // To'lov muddati (30 kun keyin)
+            "status": "pending",       // To'lov holati
+            "is_overdue": false,       // To'lov kechiktirilganmi
+            "is_paid": false,         // To'lov to'langanmi
+            "days_remaining": 25       // To'lov muddatigacha qolgan kunlar
+        },
+        "total_amount": 200000,        // Umumiy buyurtma miqdori
+        "remaining_amount": 100000,    // To'lanishi kerak bo'lgan qolgan summa
+        "payment_schedule": {
+            "first_payment_due": "Darhol",
+            "second_payment_due": "30 kun ichida (2024-04-19 gacha)"
+        }
+    }
+}
+
+5. Frontend Implementatsiya Ko'rsatmalari
+---------------------------------------
+1. Buyurtma Yaratish:
+   - Bo'lib to'lash opsiyasi uchun checkbox yoki toggle qo'shish
+   - Faollashtirilganda, bo'lib to'lash jadvalini ko'rsatish
+   - Ikkala to'lov miqdorini aniq ko'rsatish
+
+2. Buyurtma Batafsil Sahifasi:
+   - Agar is_split_payment true bo'lsa, bo'lib to'lash ma'lumotlarini ko'rsatish
+   - Ikkala to'lov uchun to'lov holatini ko'rsatish
+   - To'lov muddatlari va qolgan kunlarni ko'rsatish
+   - Kechiktirilgan to'lovlarni ajratib ko'rsatish
+   - To'lanishi kerak bo'lgan qolgan summani ko'rsatish
+
+3. To'lovni Boshqarish:
+   - Birinchi to'lovni darhol boshqarish
+   - Ikkinchi to'lov muddatini saqlash
+   - Ikkinchi to'lov uchun eslatmalarni yuborish
+   - Har bir muvaffaqiyatli to'lovdan keyin to'lov holatini yangilash
+
+4. UI/UX Ko'rsatmalari:
+   - Birinchi va ikkinchi to'lovlar orasida aniq vizual ajratish
+   - To'lov holati uchun progress indikatorlari
+   - Ikkinchi to'lov uchun taymer
+   - Muvaffaqiyatsiz to'lovlar uchun aniq xato xabarlari
+   - Muvaffaqiyatli to'lovlar uchun tasdiqlash xabarlari
+
+6. Xatoliklarni Boshqarish
+-------------------------
+- Birinchi to'lov muvaffaqiyatsiz bo'lgan holatlarni boshqarish
+- Ikkinchi to'lov kechiktirilgan holatlarni boshqarish
+- Foydalanuvchilarga aniq xato xabarlarini taqdim etish
+- Muvaffaqiyatsiz to'lovlar uchun qayta urinish imkoniyatini berish
+
+7. Testlash Stsenariylari
+------------------------
+1. Muvaffaqiyatli bo'lib to'lash oqimi
+2. Muvaffaqiyatsiz birinchi to'lov
+3. Muvaffaqiyatsiz ikkinchi to'lov
+4. Kechiktirilgan ikkinchi to'lov
+5. Qisman to'lov stsenariylari
+6. To'lov holati yangilanishlari
+7. To'lov eslatmalari bildirishnomalari
+
+8. Xavfsizlik Ko'rsatmalari
+--------------------------
+- To'lov miqdorlarini tekshirish
+- Xavfsiz to'lov jarayonini ta'minlash
+- Qo'shma to'lovlarni oldini olish
+- To'lov tarixini saqlash
+- Foydalanuvchi ma'lumotlarini xavfsiz saqlash
+
+9. API Endpointlari
+------------------
+GET /api/orders/{id}/
+- Bo'lib to'lash ma'lumotlarini o'z ichiga olgan buyurtma ma'lumotlarini qaytaradi
+
+POST /api/orders/
+- Bo'lib to'lash opsiyasi bilan yangi buyurtma yaratish
+
+PATCH /api/orders/{id}/
+- To'lov holatini yangilash
+- Bo'lib to'lash ma'lumotlarini yangilash
+
+10. Status Kodlari
+----------------
+200: Muvaffaqiyatli
+400: Noto'g'ri so'rov (noto'g'ri to'lov ma'lumotlari)
+401: Avtorizatsiyadan o'tilmagan
+403: Ruxsat berilmagan
+404: Buyurtma topilmadi
+500: Server xatosi
+
+11. Yaxshi Amaliyotlar
+--------------------
+1. Har doim to'lov miqdorlarini tekshirish
+2. To'lov tarixini saqlash
+3. To'lov eslatmalarini yuborish
+4. Chekka holatlarni boshqarish
+5. Foydalanuvchilarga aniq ma'lumot berish
+6. Audit jurnallarini saqlash
+7. Xavfsizlik ko'rsatmalariga rioya qilish
+8. To'liq testlash
+9. O'zgarishlarni hujjatlashtirish
+10. To'lov oqimini kuzatish
+
+12. Yordam
+---------
+Bo'lib to'lash implementatsiyasi bo'yicha savollar yoki muammolar uchun murojaat qiling:
+- Backend Jamoasi: [Aloqa Ma'lumotlari]
+- Frontend Jamoasi: [Aloqa Ma'lumotlari]
+- Yordam Jamoasi: [Aloqa Ma'lumotlari] 

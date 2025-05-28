@@ -35,3 +35,7 @@ isort==5.13.2
 # Faker for testing
 Faker==19.13.0
 factory-boy==3.3.0
+
+# Redis
+redis==5.0.1
+django-redis==5.4.0
