@@ -131,7 +131,7 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'UNICFLO API',
     'DESCRIPTION': 'API for UNICFLO e-commerce platform',
     'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': True,
+    'SERVE_INCLUDE_SCHEMA': False,
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,
         'persistAuthorization': True,
@@ -145,7 +145,6 @@ SPECTACULAR_SETTINGS = {
         'operationsSorter': 'alpha',
         'showExtensions': True,
         'showCommonExtensions': True,
-        'supportedSubmitMethods': ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'],
     },
     'COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATIONS': False,
@@ -153,7 +152,6 @@ SPECTACULAR_SETTINGS = {
     'SWAGGER_UI_DIST': 'SIDECAR',
     'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
     'REDOC_DIST': 'SIDECAR',
-    'SERVE_PUBLIC': True,
     'TAGS': [
         {'name': 'User Management', 'description': 'Управление пользователями'},
         {'name': 'Category Management', 'description': 'Управление категориями товаров'},
@@ -200,6 +198,8 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:8001',
     'http://127.0.0.1:8001',
     'http://82.97.248.29:8001',
+    'https://fixbanget-next.vercel.app',
+    'https://unicflo.uz',
 ]
 
 # Allow all origins temporarily for development
